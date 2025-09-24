@@ -30,14 +30,16 @@ void SerialTransfer::begin(Stream& _port, const configST configs)
  Inputs:
  -------
   * const Stream &_port - Serial port to communicate over
-  * const bool _debug - Whether or not to print error messages
+  * const bool _debug - Whether or not to print error messages; 0 = none, 1 = limited, 2 = verbose
   * const Stream &_debugPort - Serial port to print error messages
  Return:
  -------
   * void
 */
-void SerialTransfer::begin(Stream& _port, const bool _debug, Stream& _debugPort, uint32_t _timeout)
+void SerialTransfer::begin(Stream& _port, const uint8_t _debug, Stream& _debugPort, uint32_t _timeout)
 {
+	debug   = _debug;
+	debugPort = &_debugPort;
 	port    = &_port;
 	timeout = _timeout;
 	packet.begin(_debug, _debugPort, _timeout);
@@ -58,11 +60,22 @@ void SerialTransfer::begin(Stream& _port, const bool _debug, Stream& _debugPort,
  -------
   * uint8_t numBytesIncl - Number of payload bytes included in packet
 */
-uint8_t SerialTransfer::sendData(const uint16_t& messageLen, const uint8_t packetID)
+uint16_t SerialTransfer::sendData(const uint16_t& messageLen, const uint8_t packetID)
 {
-	uint8_t numBytesIncl;
+	uint16_t numBytesIncl;
 
 	numBytesIncl = packet.constructPacket(messageLen, packetID);
+
+if (debug == 2) {
+    for (size_t i = 0; i < PREAMBLE_SIZE; i++)
+		debugPort->printf("%d ", packet.preamble[i]);
+    for (size_t i = 0; i < numBytesIncl; i++)
+		debugPort->printf("%d ", packet.txBuff[i]);
+    for (size_t i = 0; i < POSTAMBLE_SIZE; i++)
+		debugPort->printf("%d ", packet.postamble[i]);
+	Serial.println();
+}
+
 	port->write(packet.preamble, sizeof(packet.preamble));
 	port->write(packet.txBuff, numBytesIncl);
 	port->write(packet.postamble, sizeof(packet.postamble));
@@ -82,9 +95,9 @@ uint8_t SerialTransfer::sendData(const uint16_t& messageLen, const uint8_t packe
   * void
  Return:
  -------
-  * uint8_t bytesRead - Num bytes in RX buffer
+  * uint16_t bytesRead - Num bytes in RX buffer
 */
-uint8_t SerialTransfer::available()
+uint16_t SerialTransfer::available()
 {
 	bool    valid   = false;
 	uint8_t recChar = 0xFF;
@@ -93,6 +106,8 @@ uint8_t SerialTransfer::available()
 	{
 		valid = true;
 
+		if (debug == 2)
+			debugPort->println("parsing...");
 		while (port->available())
 		{
 			recChar = port->read();
@@ -108,6 +123,8 @@ uint8_t SerialTransfer::available()
 				break;
 			}
 		}
+		if (debug == 2)
+			debugPort->println("...parsing");
 	}
 	else
 	{
