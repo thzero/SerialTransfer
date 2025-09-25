@@ -1,14 +1,15 @@
 /*
-01111110 00000000 11111111 00000000 00000000 00000000 00000000 ... 00000000 00000000 10000001
-|      | |      | |      | |               | |      | |      | | | |               | |______|__Stop byte
-|      | |      | |      | |               | |      | |      | | | |_______________|___________8-bit CRC
-|      | |      | |      | |               | |      | |      | |_|_____________________________Rest of payload
-|      | |      | |      | |               | |      | |______|_________________________________2nd payload byte
-|      | |      | |      | |               | |______|__________________________________________1st payload byte
-|      | |      | |      | |_______________|___________________________________________________# of payload bytes
-|      | |      | |______|_____________________________________________________________________COBS Overhead byte
-|      | |______|______________________________________________________________________________Packet ID (0 by default)
-|______|_______________________________________________________________________________________Start byte (constant)
+01111110 00000000 00000000 00000000 11111111 00000000 00000000 00000000 00000000 ... 00000000 00000000 10000001
+|      | |      | |               | |      | |               | |      | |      | | | |               | |______|__Stop byte
+|      | |      | |               | |      | |               | |      | |      | | | |_______________|___________8-bit CRC
+|      | |      | |               | |      | |               | |      | |      | |_|_____________________________Rest of payload
+|      | |      | |               | |      | |               | |      | |______|_________________________________2nd payload byte
+|      | |      | |               | |      | |               | |______|__________________________________________1st payload byte
+|      | |      | |               | |      | |_______________|___________________________________________________# of payload bytes
+|      | |      | |               | |______|_____________________________________________________________________COBS Overhead byte
+|      | |      | |_______________|______________________________________________________________________________Command
+|      | |______|________________________________________________________________________________________________Packet ID (0 by default)
+|______|_________________________________________________________________________________________________________Start byte (constant)
 */
 
 #pragma once
@@ -30,7 +31,7 @@ const int8_t STALE_PACKET_ERROR = -3;
 const uint8_t START_BYTE = 0x7E;
 const uint8_t STOP_BYTE  = 0x81;
 
-const uint8_t PREAMBLE_SIZE   = 5;
+const uint8_t PREAMBLE_SIZE   = 7;
 const uint8_t POSTAMBLE_SIZE  = 3;
 const uint16_t MAX_PACKET_SIZE = 0x400 - (uint16_t)PREAMBLE_SIZE - (uint16_t)POSTAMBLE_SIZE; // Maximum allowed payload bytes per packet
 
@@ -63,8 +64,9 @@ class Packet
 
 	void    begin(const configST& configs);
 	void    begin(const uint8_t& _debug = 1, Stream& _debugPort = Serial, const uint32_t& _timeout = DEFAULT_TIMEOUT);
-	uint16_t constructPacket(const uint16_t& messageLen, const uint8_t& packetID = 0);
+	uint16_t constructPacket(const uint16_t& messageLen, const uint8_t& command = 0, const uint8_t& packetID = 0);
 	uint16_t parse(const uint8_t& recChar, const bool& valid = true);
+	uint16_t currentCommand();
 	uint8_t currentPacketID();
 	void    reset();
 
@@ -158,6 +160,8 @@ class Packet
 	{
 		find_start_byte,
 		find_id_byte,
+		find_command,
+		find_command2,
 		find_overhead_byte,
 		find_payload_len,
 		find_payload_len2,
@@ -175,6 +179,7 @@ class Packet
 	uint8_t debug = false;
 
 	uint16_t bytesToRec      = 0;
+	uint16_t command         = 0;
 	uint16_t recvCrc         = 0;
 	uint8_t payIndex         = 0;
 	uint8_t idByte           = 0;

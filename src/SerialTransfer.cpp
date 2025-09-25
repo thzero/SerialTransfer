@@ -60,13 +60,14 @@ void SerialTransfer::begin(Stream& _port, const uint8_t _debug, Stream& _debugPo
  -------
   * uint8_t numBytesIncl - Number of payload bytes included in packet
 */
-uint16_t SerialTransfer::sendData(const uint16_t& messageLen, const uint8_t packetID)
+uint16_t SerialTransfer::sendData(const uint16_t& messageLen, const uint8_t command, const uint8_t packetID)
 {
 	uint16_t numBytesIncl;
 
-	numBytesIncl = packet.constructPacket(messageLen, packetID);
+	numBytesIncl = packet.constructPacket(messageLen, command, packetID);
 
 if (debug == 2) {
+	debugPort->printf("command: %d %d", command, packetID);
     for (size_t i = 0; i < PREAMBLE_SIZE; i++)
 		debugPort->printf("%d ", packet.preamble[i]);
     for (size_t i = 0; i < numBytesIncl; i++)
@@ -161,6 +162,22 @@ bool SerialTransfer::tick()
 	return false;
 }
 
+/*
+ uint8_t SerialTransfer::currentCommand()
+ Description:
+ ------------
+  * Returns the command of the last parsed packet
+ Inputs:
+ -------
+  * void
+ Return:
+ -------
+  * uint16_t - command of the last parsed packet
+*/
+uint16_t SerialTransfer::currentCommand()
+{
+	return packet.currentCommand();
+}
 
 /*
  uint8_t SerialTransfer::currentPacketID()
