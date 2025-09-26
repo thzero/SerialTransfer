@@ -64,18 +64,27 @@ uint16_t SerialTransfer::sendData(const uint16_t& messageLen, const uint8_t comm
 {
 	uint16_t numBytesIncl;
 
+	if (debug == 2) {
+		debugPort->printf("sendData.messageLen: %d, command: %d, packetID: %d\n", messageLen, command, packetID);
+	}
+
 	numBytesIncl = packet.constructPacket(messageLen, command, packetID);
 
-if (debug == 2) {
-	debugPort->printf("command: %d %d", command, packetID);
-    for (size_t i = 0; i < PREAMBLE_SIZE; i++)
-		debugPort->printf("%d ", packet.preamble[i]);
-    for (size_t i = 0; i < numBytesIncl; i++)
-		debugPort->printf("%d ", packet.txBuff[i]);
-    for (size_t i = 0; i < POSTAMBLE_SIZE; i++)
-		debugPort->printf("%d ", packet.postamble[i]);
-	Serial.println();
-}
+	if (debug == 2) {
+		debugPort->printf("sendData.numBytesIncl: %d\n", numBytesIncl);
+		debugPort->print("sendData.premable: ");
+		for (size_t i = 0; i < PREAMBLE_SIZE; i++)
+			debugPort->printf("%d ", packet.preamble[i]);
+		Serial.println();
+		debugPort->print("sendData.message: ");
+		for (size_t i = 0; i < numBytesIncl; i++)
+			debugPort->printf("%d ", packet.txBuff[i]);
+		Serial.println();
+		debugPort->print("sendData.postamble: ");
+		for (size_t i = 0; i < POSTAMBLE_SIZE; i++)
+			debugPort->printf("%d ", packet.postamble[i]);
+		Serial.println();
+	}
 
 	port->write(packet.preamble, sizeof(packet.preamble));
 	port->write(packet.txBuff, numBytesIncl);
@@ -194,6 +203,23 @@ uint16_t SerialTransfer::currentCommand()
 uint8_t SerialTransfer::currentPacketID()
 {
 	return packet.currentPacketID();
+}
+
+/*
+ uint8_t SerialTransfer::currentReceived()
+ Description:
+ ------------
+  * Returns the received bytes of the last parsed packet
+ Inputs:
+ -------
+  * void
+ Return:
+ -------
+  * uint16_t - received bytes of the last parsed packet
+*/
+uint16_t SerialTransfer::currentReceived()
+{
+	return packet.currentReceived();
 }
 
 

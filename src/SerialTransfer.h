@@ -18,6 +18,7 @@ class SerialTransfer
 	bool    tick();
 	uint16_t currentCommand();
 	uint8_t currentPacketID();
+	uint16_t currentReceived();
 	void    reset();
 
 

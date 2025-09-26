@@ -21,6 +21,7 @@ void Packet::begin(const configST& configs)
 {
 	debugPort    = configs.debugPort;
 	debug        = configs.debug;
+	packed        = configs.packed;
 	callbacks    = configs.callbacks;
 	callbacksLen = configs.callbacksLen;
 	timeout 	 = configs.timeout;
@@ -72,8 +73,12 @@ uint16_t Packet::constructPacket(const uint16_t& messageLen, const uint8_t& comm
 	if (messageLen > MAX_PACKET_SIZE)
 		size = MAX_PACKET_SIZE;
 
-	calcOverhead(txBuff, (uint8_t)messageLen);
-	stuffPacket(txBuff, (uint8_t)messageLen);
+	if (debug == 2)
+		debugPort->printf("preamble.packed: %d\n", packed);
+	if (packed) {
+		calcOverhead(txBuff, (uint8_t)messageLen);
+		stuffPacket(txBuff, (uint8_t)messageLen);
+	}
 	uint16_t crcVal = crc.calculate(txBuff, size);
 
 	if (debug == 2)
@@ -229,7 +234,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 
 				if (debug == 2) 
 				{
-					debugPort->printf("parse.bytesToRec: %d\n", bytesToRec);
+					debugPort->printf("parse.command: %d\n", command);
 					debugPort->printf("parse.MAX_PACKET_SIZE: %d\n", MAX_PACKET_SIZE);
 					debugPort->printf("parse.(command >= 0): %d\n", (command > 0));
 					debugPort->printf("parse.(command <= MAX_PACKET_SIZE): %d\n", (command <= MAX_PACKET_SIZE));
@@ -416,8 +421,10 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 				debugPort->printf("parse.recChar.low: %d\n", recChar);
 			}
 			recvCrc = ((uint16_t)recCharPrevious << 8) | recChar;  // high | low
-			if (debug == 2)
+			if (debug == 2) {
 				debugPort->printf("parse.recvCrc: %d\n", recvCrc);
+				debugPort->printf("parse.calcCrc==recvCrc: %d\n", (calcCrc == recvCrc));
+			}
 
 			if (calcCrc == recvCrc) {
 				state = find_end_byte;
@@ -446,7 +453,9 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 
 			if (recChar == STOP_BYTE)
 			{
-				unpackPacket(rxBuff);
+				if (packed)
+					unpackPacket(rxBuff);
+
 				bytesRead = bytesToRec;
 				status    = NEW_DATA;
 
@@ -542,6 +551,24 @@ uint16_t Packet::currentCommand()
 uint8_t Packet::currentPacketID()
 {
 	return idByte;
+}
+
+
+/*
+ uint16_t Packet::currentReceived()
+ Description:
+ ------------
+  * Returns the bytes received of the last parsed packet
+ Inputs:
+ -------
+  * void
+ Return:
+ -------
+  * uint8_t - bytes received of the last parsed packet
+*/
+uint16_t Packet::currentReceived()
+{
+	return bytesToRec;
 }
 
 

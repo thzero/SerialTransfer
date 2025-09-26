@@ -42,6 +42,7 @@ struct configST
 {
 	Stream*            debugPort    = &Serial;
 	uint8_t            debug        = 1; // 0 = none, 1 = limited, 2 = verbose
+	bool               packed       = false;
 	const functionPtr* callbacks    = NULL;
 	uint8_t            callbacksLen = 0;
 	uint32_t           timeout      = __UINT32_MAX__;
@@ -68,6 +69,7 @@ class Packet
 	uint16_t parse(const uint8_t& recChar, const bool& valid = true);
 	uint16_t currentCommand();
 	uint8_t currentPacketID();
+	uint16_t currentReceived();
 	void    reset();
 
 
@@ -103,11 +105,13 @@ class Packet
 		else
 			maxIndex = len + index;
 
+		// not sure why the for loop instead of memcpy?!
 		for (uint16_t i = index; i < maxIndex; i++)
 		{
 			txBuff[i] = *ptr;
 			ptr++;
 		}
+      	// memcpy(txBuff + index, &val, maxIndex);
 
 		return maxIndex;
 	}
@@ -150,6 +154,7 @@ class Packet
 			*ptr = rxBuff[i];
 			ptr++;
 		}
+		// memcpy(&val, rxBuff + index, maxIndex);
 
 		return maxIndex;
 	}
@@ -176,7 +181,8 @@ class Packet
 	uint8_t            callbacksLen = 0;
 
 	Stream* debugPort;
-	uint8_t debug = false;
+	uint8_t debug = 0;
+	bool packed = false;
 
 	uint16_t bytesToRec      = 0;
 	uint16_t command         = 0;
