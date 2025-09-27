@@ -60,7 +60,7 @@ void SerialTransfer::begin(Stream& _port, const uint8_t _debug, Stream& _debugPo
  -------
   * uint8_t numBytesIncl - Number of payload bytes included in packet
 */
-uint16_t SerialTransfer::sendData(const uint16_t& messageLen, const uint8_t command, const uint8_t packetID)
+uint16_t SerialTransfer::sendData(const uint16_t& messageLen, const uint16_t command, const uint8_t packetID)
 {
 	uint16_t numBytesIncl;
 

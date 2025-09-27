@@ -65,7 +65,7 @@ class Packet
 
 	void    begin(const configST& configs);
 	void    begin(const uint8_t& _debug = 1, Stream& _debugPort = Serial, const uint32_t& _timeout = DEFAULT_TIMEOUT);
-	uint16_t constructPacket(const uint16_t& messageLen, const uint8_t& command = 0, const uint8_t& packetID = 0);
+	uint16_t constructPacket(const uint16_t& messageLen, const uint16_t& command = 0, const uint8_t& packetID = 0);
 	uint16_t parse(const uint8_t& recChar, const bool& valid = true);
 	uint16_t currentCommand();
 	uint8_t currentPacketID();

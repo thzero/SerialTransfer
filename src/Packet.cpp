@@ -67,7 +67,7 @@ void Packet::begin(const uint8_t& _debug, Stream& _debugPort, const uint32_t& _t
  -------
   * uint16_t - Number of payload bytes included in packet
 */
-uint16_t Packet::constructPacket(const uint16_t& messageLen, const uint8_t& command, const uint8_t& packetID)
+uint16_t Packet::constructPacket(const uint16_t& messageLen, const uint16_t& command, const uint8_t& packetID)
 {
 	uint16_t size = messageLen;
 	if (messageLen > MAX_PACKET_SIZE)
