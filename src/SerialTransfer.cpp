@@ -88,6 +88,11 @@ uint16_t SerialTransfer::sendData(const uint16_t& messageLen, const uint16_t com
 
 	port->write(packet.preamble, sizeof(packet.preamble));
 	port->write(packet.txBuff, numBytesIncl);
+	// uint16_t current = numBytesIncl;
+	// while (current > 0) {
+	// 	port->write(packet.txBuff, 64);
+	// 	current -= 64;
+	// }
 	port->write(packet.postamble, sizeof(packet.postamble));
 
 	return numBytesIncl;
