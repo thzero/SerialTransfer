@@ -140,12 +140,19 @@ uint16_t Packet::constructPacket(const uint16_t& messageLen, const uint16_t& com
 
 uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 {
-	bool packet_fresh = (packetStart == 0) || ((millis() - packetStart) < timeout);
+	uint32_t current = millis();
+	bool packet_fresh = (packetStart == 0) || ((current - packetStart) < timeout);
 
 	if(!packet_fresh) //packet is stale, start over.
 	{
-		if (debug)
+		if (debug) {
 			debugPort->println("ERROR: STALE PACKET");
+			debugPort->printf("parse.packetStart: %u\n", packetStart);
+			debugPort->printf("parse.current: %u\n", current);
+			debugPort->printf("parse.timeout: %u\n", timeout);
+			debugPort->printf("parse.(current - packetStart): %u\n", (current - packetStart));
+			debugPort->printf("parse.((current - packetStart) < timeout): %u\n", ((current - packetStart) < timeout));
+		}
 
 		bytesRead   = 0;
 		state       = find_start_byte;
@@ -157,7 +164,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 
 	if (valid)
 	{
-		if (debug == 2) 
+		if (debug == 3) 
 		{
 			debugPort->printf("parse.state: %d\n", state);
 			debugPort->printf("parse.recChar: %d\n", recChar);
@@ -166,7 +173,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 		{
 		case find_start_byte: /////////////////////////////////////////
 		{
-			if (debug == 2)
+			if (debug == 3)
 				debugPort->println("parse.state: find_start_byte");
 			if (recChar == START_BYTE)
 			{
@@ -179,7 +186,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 
 		case find_id_byte: ////////////////////////////////////////////
 		{
-			if (debug == 2)
+			if (debug == 3)
 				debugPort->println("parse.state: find_id_byte");
 			idByte = recChar;
 			state  = find_command;
@@ -189,7 +196,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 		case find_command: ////////////////////////////////////////
 		{
 			// get the high value of the 16 byte length
-			if (debug == 2) 
+			if (debug == 3) 
 			{
 				debugPort->println("parse.state: find_command");
 				debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
@@ -219,7 +226,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 		case find_command2: ////////////////////////////////////////
 		{
 			// get the low value of the 16 byte length
-			if (debug == 2) 
+			if (debug == 3) 
 			{
 				debugPort->println("parse.state: find_command2");
 				debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
@@ -232,7 +239,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 				payIndex   = 0;
 				state      = find_overhead_byte;
 
-				if (debug == 2) 
+				if (debug == 3) 
 				{
 					debugPort->printf("parse.command: %d\n", command);
 					debugPort->printf("parse.MAX_PACKET_SIZE: %d\n", MAX_PACKET_SIZE);
@@ -270,7 +277,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 
 		case find_overhead_byte: //////////////////////////////////////
 		{
-			if (debug == 2)
+			if (debug == 3)
 				debugPort->println("parse.state: find_overhead_byte");
 			recOverheadByte = recChar;
 			state           = find_payload_len;
@@ -310,7 +317,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 		case find_payload_len2: ////////////////////////////////////////
 		{
 			// get the low value of the 16 byte length
-			if (debug == 2) 
+			if (debug == 3) 
 			{
 				debugPort->println("parse.state: find_payload_len2");
 				debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
@@ -323,7 +330,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 				payIndex   = 0;
 				state      = find_payload;
 
-				if (debug == 2) 
+				if (debug == 3) 
 				{
 					debugPort->printf("parse.bytesToRec: %d\n", bytesToRec);
 					debugPort->printf("parse.MAX_PACKET_SIZE: %d\n", MAX_PACKET_SIZE);
@@ -361,8 +368,14 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 
 		case find_payload: ////////////////////////////////////////////
 		{
-			if (debug == 2)
+			if (debug == 3) 
+			{
 				debugPort->println("parse.state: find_payload");
+				debugPort->printf("parse.payIndex: %d\n", payIndex);
+				debugPort->printf("parse.bytesToRec: %d\n", bytesToRec);
+				debugPort->printf("parse.recChar: %d\n", recChar);
+			}
+			
 			if (payIndex < bytesToRec)
 			{
 				rxBuff[payIndex] = recChar;
@@ -399,10 +412,10 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 		case find_crc: ///////////////////////////////////////////
 		{
 			// get the high value of the 16 byte crc
-			if (debug == 2)
+			if (debug == 3)
 				debugPort->println("parse.state: find_crc");
 			recCharPrevious = recChar;
-			if (debug == 2)
+			if (debug == 3)
 				debugPort->printf("parse.recChar.high: %d\n", recChar);
 			state = find_crc2;
 
@@ -412,16 +425,16 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 		case find_crc2: ////////////////////////////////////////
 		{
 			// get the low value of the 16 byte crc
-			if (debug == 2)
+			if (debug == 3)
 				debugPort->println("parse.state: find_crc2");
 			uint16_t calcCrc = crc.calculate(rxBuff, bytesToRec);
-			if (debug == 2) 
+			if (debug == 3) 
 			{
 				debugPort->printf("parse.calcCrc: %d\n", calcCrc);
 				debugPort->printf("parse.recChar.low: %d\n", recChar);
 			}
 			recvCrc = ((uint16_t)recCharPrevious << 8) | recChar;  // high | low
-			if (debug == 2) {
+			if (debug == 3) {
 				debugPort->printf("parse.recvCrc: %d\n", recvCrc);
 				debugPort->printf("parse.calcCrc==recvCrc: %d\n", (calcCrc == recvCrc));
 			}
@@ -447,7 +460,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 
 		case find_end_byte: ///////////////////////////////////////////
 		{
-			if (debug == 2)
+			if (debug == 3)
 				debugPort->println("parse.state: find_end_byte");
 			state = find_start_byte;
 
@@ -470,6 +483,12 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 					}
 				}
 				packetStart = 0;	// reset the timer
+
+				if (debug == 3)
+				{
+					debugPort->printf("parse.state2/status: %d %d\n", state, status);
+					debugPort->println();
+				}
 				return bytesToRec;
 			}
 
@@ -506,7 +525,7 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 		return bytesRead;
 	}
 
-	if (debug == 2)
+	if (debug == 3)
 	{
 		debugPort->printf("parse.state2: %d\n", state);
 		debugPort->printf("parse.status: %d\n", status);

@@ -30,7 +30,7 @@ void SerialTransfer::begin(Stream& _port, const configST configs)
  Inputs:
  -------
   * const Stream &_port - Serial port to communicate over
-  * const bool _debug - Whether or not to print error messages; 0 = none, 1 = limited, 2 = verbose
+  * const bool _debug - Whether or not to print error messages; 0 = none, 1 = limited, 2 = verbose send, 3 = verbose receive
   * const Stream &_debugPort - Serial port to print error messages
  Return:
  -------
@@ -121,8 +121,6 @@ uint16_t SerialTransfer::available()
 	{
 		valid = true;
 
-		if (debug == 2)
-			debugPort->println("parsing...");
 		while (port->available())
 		{
 			recChar = port->read();
@@ -138,8 +136,6 @@ uint16_t SerialTransfer::available()
 				break;
 			}
 		}
-		if (debug == 2)
-			debugPort->println("...parsing");
 	}
 	else
 	{

@@ -12,7 +12,7 @@ class SerialTransfer
 
 
 	void    begin(Stream& _port, const configST configs);
-	void    begin(Stream& _port, const uint8_t _debug = true, Stream& _debugPort = Serial, uint32_t _timeout = DEFAULT_TIMEOUT);
+	void    begin(Stream& _port, const uint8_t _debug = 0, Stream& _debugPort = Serial, uint32_t _timeout = DEFAULT_TIMEOUT);
 	uint16_t sendData(const uint16_t& messageLen, const uint16_t command = 0, const uint8_t packetID = 0);
 	uint16_t available();
 	bool    tick();
@@ -99,7 +99,7 @@ class SerialTransfer
 
 
   private: // <<---------------------------------------//private
-	uint8_t debug = false;
+	uint8_t debug = 0;
 	Stream* debugPort;
 	Stream* port;
 	uint32_t timeout;
