@@ -59,7 +59,7 @@ class Packet
 	uint8_t preamble[PREAMBLE_SIZE];
 	uint8_t postamble[POSTAMBLE_SIZE];
 
-	uint8_t bytesRead = 0;
+	uint16_t bytesRead = 0;
 	int8_t  status    = 0;
 
 
@@ -187,7 +187,7 @@ class Packet
 	uint16_t bytesToRec      = 0;
 	uint16_t command         = 0;
 	uint16_t recvCrc         = 0;
-	uint8_t payIndex         = 0;
+	uint16_t payIndex         = 0;
 	uint8_t idByte           = 0;
 	uint8_t overheadByte     = 0;
 	uint8_t recOverheadByte  = 0;
