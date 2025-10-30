@@ -12,11 +12,13 @@ class SerialTransfer
 
 
 	void    begin(Stream& _port, const configST configs);
-	void    begin(Stream& _port, const bool _debug = true, Stream& _debugPort = Serial, uint32_t _timeout = DEFAULT_TIMEOUT);
-	uint8_t sendData(const uint16_t& messageLen, const uint8_t packetID = 0);
-	uint8_t available();
+	void    begin(Stream& _port, const uint8_t _debug = 0, Stream& _debugPort = Serial, uint32_t _timeout = DEFAULT_TIMEOUT);
+	uint16_t sendData(const uint16_t& messageLen, const uint16_t command = 0, const uint8_t packetID = 0);
+	uint16_t available();
 	bool    tick();
+	uint16_t currentCommand();
 	uint8_t currentPacketID();
+	uint16_t currentReceived();
 	void    reset();
 
 
@@ -90,13 +92,15 @@ class SerialTransfer
 	  * uint8_t - Number of payload bytes included in packet
 	*/
 	template <typename T>
-	uint8_t sendDatum(const T& val, const uint16_t& len = sizeof(T))
+	uint16_t sendDatum(const T& val, const uint16_t& len = sizeof(T))
 	{
 		return sendData(packet.txObj(val, 0, len));
 	}
 
 
   private: // <<---------------------------------------//private
+	uint8_t debug = 0;
+	Stream* debugPort;
 	Stream* port;
 	uint32_t timeout;
 };

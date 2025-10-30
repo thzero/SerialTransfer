@@ -1,14 +1,15 @@
 /*
-01111110 00000000 11111111 00000000 00000000 00000000 ... 00000000 10000001
-|      | |      | |      | |      | |      | |      | | | |      | |______|__Stop byte
-|      | |      | |      | |      | |      | |      | | | |______|___________8-bit CRC
-|      | |      | |      | |      | |      | |      | |_|____________________Rest of payload
-|      | |      | |      | |      | |      | |______|________________________2nd payload byte
-|      | |      | |      | |      | |______|_________________________________1st payload byte
-|      | |      | |      | |______|__________________________________________# of payload bytes
-|      | |      | |______|___________________________________________________COBS Overhead byte
-|      | |______|____________________________________________________________Packet ID (0 by default)
-|______|_____________________________________________________________________Start byte (constant)
+01111110 00000000 00000000 00000000 11111111 00000000 00000000 00000000 00000000 ... 00000000 00000000 10000001
+|      | |      | |               | |      | |               | |      | |      | | | |               | |______|__Stop byte
+|      | |      | |               | |      | |               | |      | |      | | | |_______________|___________8-bit CRC
+|      | |      | |               | |      | |               | |      | |      | |_|_____________________________Rest of payload
+|      | |      | |               | |      | |               | |      | |______|_________________________________2nd payload byte
+|      | |      | |               | |      | |               | |______|__________________________________________1st payload byte
+|      | |      | |               | |      | |_______________|___________________________________________________# of payload bytes
+|      | |      | |               | |______|_____________________________________________________________________COBS Overhead byte
+|      | |      | |_______________|______________________________________________________________________________Command
+|      | |______|________________________________________________________________________________________________Packet ID (0 by default)
+|______|_________________________________________________________________________________________________________Start byte (constant)
 */
 
 #pragma once
@@ -30,9 +31,10 @@ const int8_t STALE_PACKET_ERROR = -3;
 const uint8_t START_BYTE = 0x7E;
 const uint8_t STOP_BYTE  = 0x81;
 
-const uint8_t PREAMBLE_SIZE   = 4;
-const uint8_t POSTAMBLE_SIZE  = 2;
-const uint8_t MAX_PACKET_SIZE = 0xFE; // Maximum allowed payload bytes per packet
+const uint8_t PREAMBLE_SIZE   = 7;
+const uint8_t POSTAMBLE_SIZE  = 3;
+const uint16_t PACKET_SIZE = 0x400;
+const uint16_t MAX_PACKET_SIZE = (uint16_t)PACKET_SIZE - (uint16_t)PREAMBLE_SIZE - (uint16_t)POSTAMBLE_SIZE; // Maximum allowed payload bytes per packet
 
 const uint8_t DEFAULT_TIMEOUT = 50;
 
@@ -40,7 +42,8 @@ const uint8_t DEFAULT_TIMEOUT = 50;
 struct configST
 {
 	Stream*            debugPort    = &Serial;
-	bool               debug        = true;
+	uint8_t            debug        = 1; // 0 = none, 1 = limited, 2 = verbose
+	bool               packed       = false;
 	const functionPtr* callbacks    = NULL;
 	uint8_t            callbacksLen = 0;
 	uint32_t           timeout      = __UINT32_MAX__;
@@ -52,18 +55,22 @@ class Packet
   public: // <<---------------------------------------//public
 	uint8_t txBuff[MAX_PACKET_SIZE];
 	uint8_t rxBuff[MAX_PACKET_SIZE];
-	uint8_t preamble[PREAMBLE_SIZE]   = {START_BYTE, 0, 0, 0};
-	uint8_t postamble[POSTAMBLE_SIZE] = {0, STOP_BYTE};
+	// uint8_t preamble[PREAMBLE_SIZE]   = {START_BYTE, 0, 0, 0, 0};
+	// uint8_t postamble[POSTAMBLE_SIZE] = {0, 0, STOP_BYTE};
+	uint8_t preamble[PREAMBLE_SIZE];
+	uint8_t postamble[POSTAMBLE_SIZE];
 
-	uint8_t bytesRead = 0;
+	uint16_t bytesRead = 0;
 	int8_t  status    = 0;
 
 
 	void    begin(const configST& configs);
-	void    begin(const bool& _debug = true, Stream& _debugPort = Serial, const uint32_t& _timeout = DEFAULT_TIMEOUT);
-	uint8_t constructPacket(const uint16_t& messageLen, const uint8_t& packetID = 0);
-	uint8_t parse(const uint8_t& recChar, const bool& valid = true);
+	void    begin(const uint8_t& _debug = 1, Stream& _debugPort = Serial, const uint32_t& _timeout = DEFAULT_TIMEOUT);
+	uint16_t constructPacket(const uint16_t& messageLen, const uint16_t& command = 0, const uint8_t& packetID = 0);
+	uint16_t parse(const uint8_t& recChar, const bool& valid = true);
+	uint16_t currentCommand();
 	uint8_t currentPacketID();
+	uint16_t currentReceived();
 	void    reset();
 
 
@@ -99,11 +106,13 @@ class Packet
 		else
 			maxIndex = len + index;
 
+		// not sure why the for loop instead of memcpy?!
 		for (uint16_t i = index; i < maxIndex; i++)
 		{
 			txBuff[i] = *ptr;
 			ptr++;
 		}
+      	// memcpy(txBuff + index, &val, maxIndex);
 
 		return maxIndex;
 	}
@@ -146,6 +155,7 @@ class Packet
 			*ptr = rxBuff[i];
 			ptr++;
 		}
+		// memcpy(&val, rxBuff + index, maxIndex);
 
 		return maxIndex;
 	}
@@ -156,10 +166,14 @@ class Packet
 	{
 		find_start_byte,
 		find_id_byte,
+		find_command,
+		find_command2,
 		find_overhead_byte,
 		find_payload_len,
+		find_payload_len2,
 		find_payload,
 		find_crc,
+		find_crc2,
 		find_end_byte
 	};
 	fsm state = find_start_byte;
@@ -168,20 +182,24 @@ class Packet
 	uint8_t            callbacksLen = 0;
 
 	Stream* debugPort;
-	bool    debug = false;
+	uint8_t debug = 0;
+	bool packed = false;
 
-	uint8_t bytesToRec      = 0;
-	uint8_t payIndex        = 0;
-	uint8_t idByte          = 0;
-	uint8_t overheadByte    = 0;
-	uint8_t recOverheadByte = 0;
+	uint16_t bytesToRec      = 0;
+	uint16_t command         = 0;
+	uint16_t recvCrc         = 0;
+	uint16_t payIndex        = 0;
+	uint8_t idByte           = 0;
+	uint8_t overheadByte     = 0;
+	uint8_t recOverheadByte  = 0;
+	uint8_t recCharPrevious  = 0;
 
-	uint32_t packetStart    = 0;
+	uint32_t packetStart     = 0;
 	uint32_t timeout;
 
 
-	void    calcOverhead(uint8_t arr[], const uint8_t& len);
-	int16_t findLast(uint8_t arr[], const uint8_t& len);
-	void    stuffPacket(uint8_t arr[], const uint8_t& len);
+	void    calcOverhead(uint8_t arr[], const uint16_t& len);
+	int16_t findLast(uint8_t arr[], const uint16_t& len);
+	void    stuffPacket(uint8_t arr[], const uint16_t& len);
 	void    unpackPacket(uint8_t arr[]);
 };

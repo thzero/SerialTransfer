@@ -5,10 +5,10 @@
 class PacketCRC
 {
   public: // <<---------------------------------------//public
-	uint8_t poly = 0;
+	uint16_t poly = 0;
 
 
-	PacketCRC(const uint8_t& polynomial = 0x9B, const uint8_t& crcLen = 8)
+	PacketCRC(const uint8_t& polynomial = 0x9B, const uint16_t& crcLen = 8)
 	{
 		poly      = polynomial;
 		crcLen_   = crcLen;
@@ -49,16 +49,16 @@ class PacketCRC
 		}
 	}
 
-	uint8_t calculate(const uint8_t& val)
+	uint16_t calculate(const uint16_t& val)
 	{
 		if (val < tableLen_)
 			return csTable[val];
 		return 0;
 	}
 
-	uint8_t calculate(uint8_t arr[], uint8_t len)
+	uint16_t calculate(uint8_t arr[], uint16_t len)
 	{
-		uint8_t crc = 0;
+		uint16_t crc = 0;
 		for (uint16_t i = 0; i < len; i++)
 			crc = csTable[crc ^ arr[i]];
 
@@ -68,7 +68,7 @@ class PacketCRC
 
   private: // <<---------------------------------------//private
 	uint16_t tableLen_;
-	uint8_t  crcLen_;
+	uint16_t  crcLen_;
 	uint8_t* csTable;
 };
 
