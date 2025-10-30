@@ -60,7 +60,7 @@ class Packet
 	uint8_t preamble[PREAMBLE_SIZE];
 	uint8_t postamble[POSTAMBLE_SIZE];
 
-	uint8_t bytesRead = 0;
+	uint16_t bytesRead = 0;
 	int8_t  status    = 0;
 
 
