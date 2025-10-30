@@ -188,7 +188,7 @@ class Packet
 	uint16_t bytesToRec      = 0;
 	uint16_t command         = 0;
 	uint16_t recvCrc         = 0;
-	uint8_t payIndex         = 0;
+	uint16_t payIndex        = 0;
 	uint8_t idByte           = 0;
 	uint8_t overheadByte     = 0;
 	uint8_t recOverheadByte  = 0;
