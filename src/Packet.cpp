@@ -140,10 +140,20 @@ uint16_t Packet::constructPacket(const uint16_t& messageLen, const uint16_t& com
 
 uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 {
-	uint32_t current = millis();
-	bool packet_fresh = (packetStart == 0) || ((current - packetStart) < timeout);
+	if (packetType == 0)
+		return parseTypeMaxMessage(recChar, valid);
+		
+	if (packetType == 1)
+		return parseTypeMinDelta(recChar, valid);
 
-	if(!packet_fresh) //packet is stale, start over.
+	return 0;
+}
+
+parseResults Packet::parseFreshCheck(const uint8_t& recChar, const bool& valid, bool packet_fresh, uint32_t current)
+{
+	parseResults results;
+
+	if (!packet_fresh) //packet is stale, start over.
 	{
 		if (debug) {
 			debugPort->println("ERROR: STALE PACKET");
@@ -158,9 +168,429 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 		state       = find_start_byte;
 		status      = STALE_PACKET_ERROR;
 		packetStart = 0;
+		packetLast  = 0;
 
-		return bytesRead;
+		results.bytesRead = 0;
+		results.success = false;
+		return results;
 	}
+
+	results.bytesRead = 0;
+	results.success = true;
+	return results;
+}
+
+parseResults Packet::parseFindCommand(const uint8_t& recChar)
+{
+	parseResults results;
+	
+	// get the high value of the 16 byte length
+	if (debug == 3) 
+	{
+		debugPort->println("parse.state: find_command");
+		debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
+		debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
+		debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+	}
+	if ((recChar >= 0) && (recChar <= UINT16_MAX))
+	{
+		recCharPrevious = recChar;
+		state      = find_command2;
+	}
+	else
+	{
+		bytesRead = 0;
+		state     = find_start_byte;
+		status    = PAYLOAD_ERROR;
+
+		if (debug)
+			debugPort->println("ERROR: PAYLOAD_ERROR - COMMAND INVALID - LOW BYTE");
+
+		reset();
+
+		results.success = false;
+		return results;
+	}
+
+	results.success = true;
+	return results;
+}
+
+parseResults Packet::parseFindCommand2(const uint8_t& recChar)
+{
+	parseResults results;
+
+	// get the low value of the 16 byte length
+	if (debug == 3) 
+	{
+		debugPort->println("parse.state: find_command2");
+		debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
+		debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
+		debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+	}
+	if ((recChar >= 0) && (recChar <= UINT16_MAX))
+	{
+		command = ((uint16_t)recCharPrevious << 8) | recChar;  // high | low
+		payIndex   = 0;
+		state      = find_overhead_byte;
+
+		if (debug == 3) 
+		{
+			debugPort->printf("parse.command: %d\n", command);
+			debugPort->printf("parse.MAX_PACKET_SIZE: %d\n", MAX_PACKET_SIZE);
+			debugPort->printf("parse.(command >= 0): %d\n", (command > 0));
+			debugPort->printf("parse.(command <= MAX_PACKET_SIZE): %d\n", (command <= MAX_PACKET_SIZE));
+			debugPort->printf("parse.(command >= 0) && (command <= MAX_PACKET_SIZE): %d\n", (command > 0) && (command <= MAX_PACKET_SIZE));
+		}
+		if (!((command >= 0) && (command <= MAX_PACKET_SIZE)))
+		{
+			command = 0;
+			state     = find_start_byte;
+			status    = PAYLOAD_ERROR;
+
+			if (debug)
+				debugPort->println("ERROR: PAYLOAD_ERROR - COMMAND INVALID");
+
+			reset();
+
+			results.bytesRead = bytesRead;
+			results.success = false;
+			return results;
+		}
+	}
+	else
+	{
+		bytesRead = 0;
+		state     = find_start_byte;
+		status    = PAYLOAD_ERROR;
+
+		if (debug)
+			debugPort->println("ERROR: PAYLOAD_ERROR - COMMAND INVALID - HIGH BYTE");
+
+		reset();
+
+		results.bytesRead = bytesRead;
+		results.success = false;
+		return results;
+	}
+
+	results.bytesRead = bytesRead;
+	results.success = true;
+	return results;
+}
+
+parseResults Packet::parseFindIdByte(const uint8_t& recChar)
+{
+	parseResults results;
+
+	if (debug == 3)
+		debugPort->println("parse.state: find_id_byte");
+	idByte = recChar;
+	state  = find_command;
+	
+	results.success = true;
+	return results;
+}
+
+parseResults Packet::parseFindOverheadByte(const uint8_t& recChar)
+{
+	parseResults results;
+
+	if (debug == 3)
+		debugPort->println("parse.state: find_overhead_byte");
+	recOverheadByte = recChar;
+	state           = find_payload_len;
+	
+	results.success = true;
+	return results;
+}
+
+parseResults Packet::parseFindStartByte(const uint8_t& recChar)
+{
+	parseResults results;
+
+	if (debug == 3)
+		debugPort->println("parse.state: find_start_byte");
+	if (recChar == START_BYTE)
+	{
+		state       = find_id_byte;
+		packetStart = millis();	//start the timer
+	}
+
+	results.success = true;
+	return results;
+}
+
+parseResults Packet::parseFindPayloadLength(const uint8_t& recChar)
+{
+	parseResults results;
+
+	// get the high value of the 16 byte length
+	if (debug == 2) 
+	{
+		debugPort->println("parse.state: find_payload_len");
+		debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
+		debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
+		debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+	}
+	if ((recChar >= 0) && (recChar <= UINT16_MAX))
+	{
+		recCharPrevious = recChar;
+		state      = find_payload_len2;
+	}
+	else
+	{
+		bytesRead = 0;
+		state     = find_start_byte;
+		status    = PAYLOAD_ERROR;
+
+		if (debug)
+			debugPort->println("ERROR: PAYLOAD_ERROR - PAYLOAD LENGTH INVALID - LOW BYTE");
+
+		reset();
+
+		results.success = false;
+		return results;
+	}
+
+	results.success = true;
+	return results;
+}
+
+parseResults Packet::parseFindPayloadLength2(const uint8_t& recChar)
+{
+	parseResults results;
+
+	// get the low value of the 16 byte length
+	if (debug == 3) 
+	{
+		debugPort->println("parse.state: find_payload_len2");
+		debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
+		debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
+		debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+	}
+	if ((recChar >= 0) && (recChar <= UINT16_MAX))
+	{
+		bytesToRec = ((uint16_t)recCharPrevious << 8) | recChar;  // high | low
+		payIndex   = 0;
+		state      = find_payload;
+
+		if (debug == 3) 
+		{
+			debugPort->printf("parse.bytesToRec: %d\n", bytesToRec);
+			debugPort->printf("parse.MAX_PACKET_SIZE: %d\n", MAX_PACKET_SIZE);
+			debugPort->printf("parse.(bytesToRec > 0): %d\n", (bytesToRec > 0));
+			debugPort->printf("parse.(bytesToRec <= MAX_PACKET_SIZE): %d\n", (bytesToRec <= MAX_PACKET_SIZE));
+			debugPort->printf("parse.(bytesToRec > 0) && (bytesToRec <= MAX_PACKET_SIZE): %d\n", (bytesToRec > 0) && (bytesToRec <= MAX_PACKET_SIZE));
+		}
+		if (!((bytesToRec > 0) && (bytesToRec <= MAX_PACKET_SIZE)))
+		{
+			bytesRead = 0;
+			state     = find_start_byte;
+			status    = PAYLOAD_ERROR;
+
+			if (debug)
+				debugPort->println("ERROR: PAYLOAD_ERROR - PAYLOAD LENGTH INVALID");
+
+			reset();
+
+			results.success = false;
+			return results;
+		}
+	}
+	else
+	{
+		bytesRead = 0;
+		state     = find_start_byte;
+		status    = PAYLOAD_ERROR;
+
+		if (debug)
+			debugPort->println("ERROR: PAYLOAD_ERROR - PAYLOAD LENGTH INVALID - HIGH BYTE");
+
+		reset();
+
+		results.success = false;
+		return results;
+	}
+
+	results.success = true;
+	return results;
+}
+
+parseResults Packet::parseFindPayload(const uint8_t& recChar)
+{
+	parseResults results;
+
+	if (debug == 3) 
+	{
+		debugPort->println("parse.state: find_payload");
+		debugPort->printf("parse.payIndex: %d\n", payIndex);
+		debugPort->printf("parse.bytesToRec: %d\n", bytesToRec);
+		debugPort->printf("parse.recChar: %d\n", recChar);
+	}
+	
+	if (payIndex < bytesToRec)
+	{
+		rxBuff[payIndex] = recChar;
+		payIndex++;
+
+		if (payIndex == bytesToRec)
+			state    = find_crc;
+	}
+
+	results.success = true;
+	return results;
+}
+
+parseResults Packet::parseFindCrc(const uint8_t& recChar)
+{
+	parseResults results;
+
+	// get the high value of the 16 byte crc
+	if (debug == 3)
+		debugPort->println("parse.state: find_crc");
+	recCharPrevious = recChar;
+	if (debug == 3)
+		debugPort->printf("parse.recChar.high: %d\n", recChar);
+	state = find_crc2;
+
+	results.success = true;
+	return results;
+}
+
+parseResults Packet::parseFindCrc2(const uint8_t& recChar)
+{
+	parseResults results;
+
+	// get the low value of the 16 byte crc
+	if (debug == 3)
+		debugPort->println("parse.state: find_crc2");
+	uint16_t calcCrc = crc.calculate(rxBuff, bytesToRec);
+	if (debug == 3) 
+	{
+		debugPort->printf("parse.calcCrc: %d\n", calcCrc);
+		debugPort->printf("parse.recChar.low: %d\n", recChar);
+	}
+	recvCrc = ((uint16_t)recCharPrevious << 8) | recChar;  // high | low
+	if (debug == 3) {
+		debugPort->printf("parse.recvCrc: %d\n", recvCrc);
+		debugPort->printf("parse.calcCrc==recvCrc: %d\n", (calcCrc == recvCrc));
+	}
+
+	if (calcCrc == recvCrc) {
+		state = find_end_byte;
+	}
+	else
+	{
+		bytesRead = 0;
+		state     = find_start_byte;
+		status    = CRC_ERROR;
+
+		if (debug)
+			debugPort->println("ERROR: CRC_ERROR");
+
+		reset();
+		results.success = false;
+		return results;
+	}
+
+	results.success = true;
+	return results;
+}
+
+parseResults Packet::parseFindEndByte(const uint8_t& recChar)
+{
+	parseResults results;
+	
+	if (debug == 3)
+		debugPort->println("parse.state: find_end_byte");
+	state = find_start_byte;
+
+	if (recChar == STOP_BYTE)
+	{
+		if (packed)
+			unpackPacket(rxBuff);
+
+		bytesRead = bytesToRec;
+		status    = NEW_DATA;
+
+		if (callbacks)
+		{
+			if (idByte < callbacksLen)
+				callbacks[idByte]();
+			else if (debug)
+			{
+				debugPort->print(F("ERROR: No callback available for packet ID "));
+				debugPort->println(idByte);
+			}
+		}
+		packetStart = 0;	// reset the timer
+
+		if (debug == 3)
+		{
+			debugPort->printf("parse.state2/status: %d %d\n", state, status);
+			debugPort->println();
+		}
+
+		results.bytesRead = bytesToRec;
+		results.success = true;
+		return results;
+	}
+
+	bytesRead = 0;
+	status    = STOP_BYTE_ERROR;
+
+	if (debug)
+		debugPort->println("ERROR: STOP_BYTE_ERROR");
+
+	reset();
+	results.success = false;
+	return results;
+}
+
+parseResults Packet::parseUndefinedState(const uint8_t& recChar)
+{
+	parseResults results;
+	
+	if (debug)
+	{
+		debugPort->print("ERROR: Undefined state ");
+		debugPort->println(state);
+	}
+
+	reset();
+	bytesRead = 0;
+	state     = find_start_byte;
+	results.success = false;
+	return results;
+}
+
+uint16_t Packet::parseTypeMaxMessage(const uint8_t& recChar, const bool& valid)
+{
+	uint32_t current = millis();
+	bool packet_fresh = (packetStart == 0) || ((current - packetStart) < timeout);
+
+	// if (!packet_fresh) //packet is stale, start over.
+	// {
+	// 	if (debug) {
+	// 		debugPort->println("ERROR: STALE PACKET");
+	// 		debugPort->printf("parse.packetStart: %u\n", packetStart);
+	// 		debugPort->printf("parse.current: %u\n", current);
+	// 		debugPort->printf("parse.timeout: %u\n", timeout);
+	// 		debugPort->printf("parse.(current - packetStart): %u\n", (current - packetStart));
+	// 		debugPort->printf("parse.((current - packetStart) < timeout): %u\n", ((current - packetStart) < timeout));
+	// 	}
+
+	// 	bytesRead   = 0;
+	// 	state       = find_start_byte;
+	// 	status      = STALE_PACKET_ERROR;
+	// 	packetStart = 0;
+
+	// 	return bytesRead;
+	// }
+	parseResults results = parseFreshCheck(recChar, valid, packet_fresh, current);
+	if (!results.success)
+		return results.bytesRead;
 
 	if (valid)
 	{
@@ -171,351 +601,393 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 		}
 		switch (state)
 		{
-		case find_start_byte: /////////////////////////////////////////
-		{
-			if (debug == 3)
-				debugPort->println("parse.state: find_start_byte");
-			if (recChar == START_BYTE)
+			case find_start_byte: /////////////////////////////////////////
 			{
-				state       = find_id_byte;
-				packetStart = millis();	//start the timer
+				// if (debug == 3)
+				// 	debugPort->println("parse.state: find_start_byte");
+				// if (recChar == START_BYTE)
+				// {
+				// 	state       = find_id_byte;
+				// 	packetStart = millis();	//start the timer
+				// }
+
+				parseFindStartByte(recChar);
+				break;
 			}
 
-			break;
-		}
-
-		case find_id_byte: ////////////////////////////////////////////
-		{
-			if (debug == 3)
-				debugPort->println("parse.state: find_id_byte");
-			idByte = recChar;
-			state  = find_command;
-			break;
-		}
-
-		case find_command: ////////////////////////////////////////
-		{
-			// get the high value of the 16 byte length
-			if (debug == 3) 
+			case find_id_byte: ////////////////////////////////////////////
 			{
-				debugPort->println("parse.state: find_command");
-				debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
-				debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
-				debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+				// if (debug == 3)
+				// 	debugPort->println("parse.state: find_id_byte");
+				// idByte = recChar;
+				// state  = find_command;
+
+				parseFindIdByte(recChar);
+				break;
 			}
-			if ((recChar >= 0) && (recChar <= UINT16_MAX))
+
+			case find_command: ////////////////////////////////////////
 			{
-				recCharPrevious = recChar;
-				state      = find_command2;
+				// // get the high value of the 16 byte length
+				// if (debug == 3) 
+				// {
+				// 	debugPort->println("parse.state: find_command");
+				// 	debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
+				// 	debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
+				// 	debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+				// }
+				// if ((recChar >= 0) && (recChar <= UINT16_MAX))
+				// {
+				// 	recCharPrevious = recChar;
+				// 	state      = find_command2;
+				// }
+				// else
+				// {
+				// 	bytesRead = 0;
+				// 	state     = find_start_byte;
+				// 	status    = PAYLOAD_ERROR;
+
+				// 	if (debug)
+				// 		debugPort->println("ERROR: PAYLOAD_ERROR - COMMAND INVALID - LOW BYTE");
+
+				// 	reset();
+				// 	return bytesRead;
+				// }
+
+				parseResults results = parseFindCommand(recChar);
+				if (!results.success)
+					return results.bytesRead;
+
+				break;
 			}
-			else
+
+			case find_command2: ////////////////////////////////////////
 			{
-				bytesRead = 0;
-				state     = find_start_byte;
-				status    = PAYLOAD_ERROR;
+				// // get the low value of the 16 byte length
+				// if (debug == 3) 
+				// {
+				// 	debugPort->println("parse.state: find_command2");
+				// 	debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
+				// 	debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
+				// 	debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+				// }
+				// if ((recChar >= 0) && (recChar <= UINT16_MAX))
+				// {
+				// 	command = ((uint16_t)recCharPrevious << 8) | recChar;  // high | low
+				// 	payIndex   = 0;
+				// 	state      = find_overhead_byte;
 
-				if (debug)
-					debugPort->println("ERROR: PAYLOAD_ERROR - COMMAND INVALID - LOW BYTE");
+				// 	if (debug == 3) 
+				// 	{
+				// 		debugPort->printf("parse.command: %d\n", command);
+				// 		debugPort->printf("parse.MAX_PACKET_SIZE: %d\n", MAX_PACKET_SIZE);
+				// 		debugPort->printf("parse.(command >= 0): %d\n", (command > 0));
+				// 		debugPort->printf("parse.(command <= MAX_PACKET_SIZE): %d\n", (command <= MAX_PACKET_SIZE));
+				// 		debugPort->printf("parse.(command >= 0) && (command <= MAX_PACKET_SIZE): %d\n", (command > 0) && (command <= MAX_PACKET_SIZE));
+				// 	}
+				// 	if (!((command >= 0) && (command <= MAX_PACKET_SIZE)))
+				// 	{
+				// 		command = 0;
+				// 		state     = find_start_byte;
+				// 		status    = PAYLOAD_ERROR;
 
-				reset();
-				return bytesRead;
+				// 		if (debug)
+				// 			debugPort->println("ERROR: PAYLOAD_ERROR - COMMAND INVALID");
+
+				// 		reset();
+				// 		return bytesRead;
+				// 	}
+				// }
+				// else
+				// {
+				// 	bytesRead = 0;
+				// 	state     = find_start_byte;
+				// 	status    = PAYLOAD_ERROR;
+
+				// 	if (debug)
+				// 		debugPort->println("ERROR: PAYLOAD_ERROR - COMMAND INVALID - HIGH BYTE");
+
+				// 	reset();
+				// 	return bytesRead;
+				// }
+
+				parseResults results = parseFindCommand2(recChar);
+				if (!results.success)
+					return results.bytesRead;
+
+				break;
 			}
-			break;
-		}
 
-		case find_command2: ////////////////////////////////////////
-		{
-			// get the low value of the 16 byte length
-			if (debug == 3) 
+			case find_overhead_byte: //////////////////////////////////////
 			{
-				debugPort->println("parse.state: find_command2");
-				debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
-				debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
-				debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+				// if (debug == 3)
+				// 	debugPort->println("parse.state: find_overhead_byte");
+				// recOverheadByte = recChar;
+				// state           = find_payload_len;
+
+				parseResults results = parseFindOverheadByte(recChar);
+				if (!results.success)
+					return results.bytesRead;
+
+				break;
 			}
-			if ((recChar >= 0) && (recChar <= UINT16_MAX))
+
+			case find_payload_len: ////////////////////////////////////////
 			{
-				command = ((uint16_t)recCharPrevious << 8) | recChar;  // high | low
-				payIndex   = 0;
-				state      = find_overhead_byte;
+				// // get the high value of the 16 byte length
+				// if (debug == 2) 
+				// {
+				// 	debugPort->println("parse.state: find_payload_len");
+				// 	debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
+				// 	debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
+				// 	debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+				// }
+				// if ((recChar >= 0) && (recChar <= UINT16_MAX))
+				// {
+				// 	recCharPrevious = recChar;
+				// 	state      = find_payload_len2;
+				// }
+				// else
+				// {
+				// 	bytesRead = 0;
+				// 	state     = find_start_byte;
+				// 	status    = PAYLOAD_ERROR;
 
-				if (debug == 3) 
-				{
-					debugPort->printf("parse.command: %d\n", command);
-					debugPort->printf("parse.MAX_PACKET_SIZE: %d\n", MAX_PACKET_SIZE);
-					debugPort->printf("parse.(command >= 0): %d\n", (command > 0));
-					debugPort->printf("parse.(command <= MAX_PACKET_SIZE): %d\n", (command <= MAX_PACKET_SIZE));
-					debugPort->printf("parse.(command >= 0) && (command <= MAX_PACKET_SIZE): %d\n", (command > 0) && (command <= MAX_PACKET_SIZE));
-				}
-				if (!((command >= 0) && (command <= MAX_PACKET_SIZE)))
-				{
-					command = 0;
-					state     = find_start_byte;
-					status    = PAYLOAD_ERROR;
+				// 	if (debug)
+				// 		debugPort->println("ERROR: PAYLOAD_ERROR - PAYLOAD LENGTH INVALID - LOW BYTE");
 
-					if (debug)
-						debugPort->println("ERROR: PAYLOAD_ERROR - COMMAND INVALID");
+				// 	reset();
+				// 	return bytesRead;
+				// }
 
-					reset();
-					return bytesRead;
-				}
+				parseResults results = parseFindPayloadLength(recChar);
+				if (!results.success)
+					return results.bytesRead;
+
+				break;
 			}
-			else
+
+			case find_payload_len2: ////////////////////////////////////////
 			{
-				bytesRead = 0;
-				state     = find_start_byte;
-				status    = PAYLOAD_ERROR;
+				// // get the low value of the 16 byte length
+				// if (debug == 3) 
+				// {
+				// 	debugPort->println("parse.state: find_payload_len2");
+				// 	debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
+				// 	debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
+				// 	debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+				// }
+				// if ((recChar >= 0) && (recChar <= UINT16_MAX))
+				// {
+				// 	bytesToRec = ((uint16_t)recCharPrevious << 8) | recChar;  // high | low
+				// 	payIndex   = 0;
+				// 	state      = find_payload;
 
-				if (debug)
-					debugPort->println("ERROR: PAYLOAD_ERROR - COMMAND INVALID - HIGH BYTE");
+				// 	if (debug == 3) 
+				// 	{
+				// 		debugPort->printf("parse.bytesToRec: %d\n", bytesToRec);
+				// 		debugPort->printf("parse.MAX_PACKET_SIZE: %d\n", MAX_PACKET_SIZE);
+				// 		debugPort->printf("parse.(bytesToRec > 0): %d\n", (bytesToRec > 0));
+				// 		debugPort->printf("parse.(bytesToRec <= MAX_PACKET_SIZE): %d\n", (bytesToRec <= MAX_PACKET_SIZE));
+				// 		debugPort->printf("parse.(bytesToRec > 0) && (bytesToRec <= MAX_PACKET_SIZE): %d\n", (bytesToRec > 0) && (bytesToRec <= MAX_PACKET_SIZE));
+				// 	}
+				// 	if (!((bytesToRec > 0) && (bytesToRec <= MAX_PACKET_SIZE)))
+				// 	{
+				// 		bytesRead = 0;
+				// 		state     = find_start_byte;
+				// 		status    = PAYLOAD_ERROR;
 
-				reset();
-				return bytesRead;
+				// 		if (debug)
+				// 			debugPort->println("ERROR: PAYLOAD_ERROR - PAYLOAD LENGTH INVALID");
+
+				// 		reset();
+				// 		return bytesRead;
+				// 	}
+				// }
+				// else
+				// {
+				// 	bytesRead = 0;
+				// 	state     = find_start_byte;
+				// 	status    = PAYLOAD_ERROR;
+
+				// 	if (debug)
+				// 		debugPort->println("ERROR: PAYLOAD_ERROR - PAYLOAD LENGTH INVALID - HIGH BYTE");
+
+				// 	reset();
+				// 	return bytesRead;
+				// }
+
+				parseResults results = parseFindPayloadLength2(recChar);
+				if (!results.success)
+					return results.bytesRead;
+
+				break;
 			}
-			break;
-		}
 
-		case find_overhead_byte: //////////////////////////////////////
-		{
-			if (debug == 3)
-				debugPort->println("parse.state: find_overhead_byte");
-			recOverheadByte = recChar;
-			state           = find_payload_len;
-			break;
-		}
-
-		case find_payload_len: ////////////////////////////////////////
-		{
-			// get the high value of the 16 byte length
-			if (debug == 2) 
+			case find_payload: ////////////////////////////////////////////
 			{
-				debugPort->println("parse.state: find_payload_len");
-				debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
-				debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
-				debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+				// if (debug == 3) 
+				// {
+				// 	debugPort->println("parse.state: find_payload");
+				// 	debugPort->printf("parse.payIndex: %d\n", payIndex);
+				// 	debugPort->printf("parse.bytesToRec: %d\n", bytesToRec);
+				// 	debugPort->printf("parse.recChar: %d\n", recChar);
+				// }
+				
+				// if (payIndex < bytesToRec)
+				// {
+				// 	rxBuff[payIndex] = recChar;
+				// 	payIndex++;
+
+				// 	if (payIndex == bytesToRec)
+				// 		state    = find_crc;
+				// }
+
+				parseFindPayload(recChar);
+
+				break;
 			}
-			if ((recChar >= 0) && (recChar <= UINT16_MAX))
+
+			// case find_crc: ///////////////////////////////////////////
+			// {
+			// 	uint8_t calcCrc = crc.calculate(rxBuff, bytesToRec);
+
+			// 	if (calcCrc == recChar)
+			// 		state = find_end_byte;
+			// 	else
+			// 	{
+			// 		bytesRead = 0;
+			// 		state     = find_start_byte;
+			// 		status    = CRC_ERROR;
+
+			// 		if (debug)
+			// 			debugPort->println("ERROR: CRC_ERROR");
+
+			// 		reset();
+			// 		return bytesRead;
+			// 	}
+
+			// 	break;
+			// }
+
+			case find_crc: ///////////////////////////////////////////
 			{
-				recCharPrevious = recChar;
-				state      = find_payload_len2;
+				// // get the high value of the 16 byte crc
+				// if (debug == 3)
+				// 	debugPort->println("parse.state: find_crc");
+				// recCharPrevious = recChar;
+				// if (debug == 3)
+				// 	debugPort->printf("parse.recChar.high: %d\n", recChar);
+				// state = find_crc2;
+				
+				parseFindCrc(recChar);
+
+				break;
 			}
-			else
+
+			case find_crc2: ////////////////////////////////////////
 			{
-				bytesRead = 0;
-				state     = find_start_byte;
-				status    = PAYLOAD_ERROR;
+				// // get the low value of the 16 byte crc
+				// if (debug == 3)
+				// 	debugPort->println("parse.state: find_crc2");
+				// uint16_t calcCrc = crc.calculate(rxBuff, bytesToRec);
+				// if (debug == 3) 
+				// {
+				// 	debugPort->printf("parse.calcCrc: %d\n", calcCrc);
+				// 	debugPort->printf("parse.recChar.low: %d\n", recChar);
+				// }
+				// recvCrc = ((uint16_t)recCharPrevious << 8) | recChar;  // high | low
+				// if (debug == 3) {
+				// 	debugPort->printf("parse.recvCrc: %d\n", recvCrc);
+				// 	debugPort->printf("parse.calcCrc==recvCrc: %d\n", (calcCrc == recvCrc));
+				// }
 
-				if (debug)
-					debugPort->println("ERROR: PAYLOAD_ERROR - PAYLOAD LENGTH INVALID - LOW BYTE");
+				// if (calcCrc == recvCrc) {
+				// 	state = find_end_byte;
+				// }
+				// else
+				// {
+				// 	bytesRead = 0;
+				// 	state     = find_start_byte;
+				// 	status    = CRC_ERROR;
 
-				reset();
-				return bytesRead;
+				// 	if (debug)
+				// 		debugPort->println("ERROR: CRC_ERROR");
+
+				// 	reset();
+				// 	return bytesRead;
+				// }
+				
+				parseResults results = parseFindCrc2(recChar);
+				if (!results.success)
+					return results.bytesRead;
+
+				break;
 			}
-			break;
-		}
 
-		case find_payload_len2: ////////////////////////////////////////
-		{
-			// get the low value of the 16 byte length
-			if (debug == 3) 
+			case find_end_byte: ///////////////////////////////////////////
 			{
-				debugPort->println("parse.state: find_payload_len2");
-				debugPort->printf("parse.(recChar >= 0): %d\n", (recChar >= 0));
-				debugPort->printf("parse.(recChar <= UINT16_MAX): %d\n", (recChar <= UINT16_MAX));
-				debugPort->printf("parse.(recChar >= 0) && (recChar <= UINT16_MAX): %d\n", (recChar >= 0) && (recChar <= UINT16_MAX));
+				// if (debug == 3)
+				// 	debugPort->println("parse.state: find_end_byte");
+				// state = find_start_byte;
+
+				// if (recChar == STOP_BYTE)
+				// {
+				// 	if (packed)
+				// 		unpackPacket(rxBuff);
+
+				// 	bytesRead = bytesToRec;
+				// 	status    = NEW_DATA;
+
+				// 	if (callbacks)
+				// 	{
+				// 		if (idByte < callbacksLen)
+				// 			callbacks[idByte]();
+				// 		else if (debug)
+				// 		{
+				// 			debugPort->print(F("ERROR: No callback available for packet ID "));
+				// 			debugPort->println(idByte);
+				// 		}
+				// 	}
+				// 	packetStart = 0;	// reset the timer
+
+				// 	if (debug == 3)
+				// 	{
+				// 		debugPort->printf("parse.state2/status: %d %d\n", state, status);
+				// 		debugPort->println();
+				// 	}
+				// 	return bytesToRec;
+				// }
+
+				// bytesRead = 0;
+				// status    = STOP_BYTE_ERROR;
+
+				// if (debug)
+				// 	debugPort->println("ERROR: STOP_BYTE_ERROR");
+
+				// reset();
+				// return bytesRead;
+
+				parseResults results = parseFindEndByte(recChar);
+				return results.bytesRead;
+				break;
 			}
-			if ((recChar >= 0) && (recChar <= UINT16_MAX))
+
+			default:
 			{
-				bytesToRec = ((uint16_t)recCharPrevious << 8) | recChar;  // high | low
-				payIndex   = 0;
-				state      = find_payload;
+				// if (debug)
+				// {
+				// 	debugPort->print("ERROR: Undefined state ");
+				// 	debugPort->println(state);
+				// }
 
-				if (debug == 3) 
-				{
-					debugPort->printf("parse.bytesToRec: %d\n", bytesToRec);
-					debugPort->printf("parse.MAX_PACKET_SIZE: %d\n", MAX_PACKET_SIZE);
-					debugPort->printf("parse.(bytesToRec > 0): %d\n", (bytesToRec > 0));
-					debugPort->printf("parse.(bytesToRec <= MAX_PACKET_SIZE): %d\n", (bytesToRec <= MAX_PACKET_SIZE));
-					debugPort->printf("parse.(bytesToRec > 0) && (bytesToRec <= MAX_PACKET_SIZE): %d\n", (bytesToRec > 0) && (bytesToRec <= MAX_PACKET_SIZE));
-				}
-				if (!((bytesToRec > 0) && (bytesToRec <= MAX_PACKET_SIZE)))
-				{
-					bytesRead = 0;
-					state     = find_start_byte;
-					status    = PAYLOAD_ERROR;
+				// reset();
+				// bytesRead = 0;
+				// state     = find_start_byte;
 
-					if (debug)
-						debugPort->println("ERROR: PAYLOAD_ERROR - PAYLOAD LENGTH INVALID");
-
-					reset();
-					return bytesRead;
-				}
+				parseUndefinedState(recChar);
+				break;
 			}
-			else
-			{
-				bytesRead = 0;
-				state     = find_start_byte;
-				status    = PAYLOAD_ERROR;
-
-				if (debug)
-					debugPort->println("ERROR: PAYLOAD_ERROR - PAYLOAD LENGTH INVALID - HIGH BYTE");
-
-				reset();
-				return bytesRead;
-			}
-			break;
-		}
-
-		case find_payload: ////////////////////////////////////////////
-		{
-			if (debug == 3) 
-			{
-				debugPort->println("parse.state: find_payload");
-				debugPort->printf("parse.payIndex: %d\n", payIndex);
-				debugPort->printf("parse.bytesToRec: %d\n", bytesToRec);
-				debugPort->printf("parse.recChar: %d\n", recChar);
-			}
-			
-			if (payIndex < bytesToRec)
-			{
-				rxBuff[payIndex] = recChar;
-				payIndex++;
-
-				if (payIndex == bytesToRec)
-					state    = find_crc;
-			}
-			break;
-		}
-
-		// case find_crc: ///////////////////////////////////////////
-		// {
-		// 	uint8_t calcCrc = crc.calculate(rxBuff, bytesToRec);
-
-		// 	if (calcCrc == recChar)
-		// 		state = find_end_byte;
-		// 	else
-		// 	{
-		// 		bytesRead = 0;
-		// 		state     = find_start_byte;
-		// 		status    = CRC_ERROR;
-
-		// 		if (debug)
-		// 			debugPort->println("ERROR: CRC_ERROR");
-
-		// 		reset();
-		// 		return bytesRead;
-		// 	}
-
-		// 	break;
-		// }
-
-		case find_crc: ///////////////////////////////////////////
-		{
-			// get the high value of the 16 byte crc
-			if (debug == 3)
-				debugPort->println("parse.state: find_crc");
-			recCharPrevious = recChar;
-			if (debug == 3)
-				debugPort->printf("parse.recChar.high: %d\n", recChar);
-			state = find_crc2;
-
-			break;
-		}
-
-		case find_crc2: ////////////////////////////////////////
-		{
-			// get the low value of the 16 byte crc
-			if (debug == 3)
-				debugPort->println("parse.state: find_crc2");
-			uint16_t calcCrc = crc.calculate(rxBuff, bytesToRec);
-			if (debug == 3) 
-			{
-				debugPort->printf("parse.calcCrc: %d\n", calcCrc);
-				debugPort->printf("parse.recChar.low: %d\n", recChar);
-			}
-			recvCrc = ((uint16_t)recCharPrevious << 8) | recChar;  // high | low
-			if (debug == 3) {
-				debugPort->printf("parse.recvCrc: %d\n", recvCrc);
-				debugPort->printf("parse.calcCrc==recvCrc: %d\n", (calcCrc == recvCrc));
-			}
-
-			if (calcCrc == recvCrc) {
-				state = find_end_byte;
-			}
-			else
-			{
-				bytesRead = 0;
-				state     = find_start_byte;
-				status    = CRC_ERROR;
-
-				if (debug)
-					debugPort->println("ERROR: CRC_ERROR");
-
-				reset();
-				return bytesRead;
-			}
-
-			break;
-		}
-
-		case find_end_byte: ///////////////////////////////////////////
-		{
-			if (debug == 3)
-				debugPort->println("parse.state: find_end_byte");
-			state = find_start_byte;
-
-			if (recChar == STOP_BYTE)
-			{
-				if (packed)
-					unpackPacket(rxBuff);
-
-				bytesRead = bytesToRec;
-				status    = NEW_DATA;
-
-				if (callbacks)
-				{
-					if (idByte < callbacksLen)
-						callbacks[idByte]();
-					else if (debug)
-					{
-						debugPort->print(F("ERROR: No callback available for packet ID "));
-						debugPort->println(idByte);
-					}
-				}
-				packetStart = 0;	// reset the timer
-
-				if (debug == 3)
-				{
-					debugPort->printf("parse.state2/status: %d %d\n", state, status);
-					debugPort->println();
-				}
-				return bytesToRec;
-			}
-
-			bytesRead = 0;
-			status    = STOP_BYTE_ERROR;
-
-			if (debug)
-				debugPort->println("ERROR: STOP_BYTE_ERROR");
-
-			reset();
-			return bytesRead;
-			break;
-		}
-
-		default:
-		{
-			if (debug)
-			{
-				debugPort->print("ERROR: Undefined state ");
-				debugPort->println(state);
-			}
-
-			reset();
-			bytesRead = 0;
-			state     = find_start_byte;
-			break;
-		}
 		}
 	}
 	else
@@ -529,6 +1001,133 @@ uint16_t Packet::parse(const uint8_t& recChar, const bool& valid)
 	{
 		debugPort->printf("parse.state2: %d\n", state);
 		debugPort->printf("parse.status: %d\n", status);
+		debugPort->println();
+	}
+
+	bytesRead = 0;
+	status    = CONTINUE;
+	return bytesRead;
+}
+
+uint16_t Packet::parseTypeMinDelta(const uint8_t& recChar, const bool& valid)
+{
+	if (!valid) {
+		bytesRead = 0;
+		status    = NO_DATA;
+		return bytesRead;
+	}
+
+	uint32_t current = millis();
+	// bool packet_fresh = (packetStart == 0) || ((current - packetStart) < timeout);
+	// bool packet_fresh = (packetStart == 0) || ((current - packetStart) < timeout);
+	bool packet_fresh = (packetStart == 0) || ((current - packetLast) < timeout);
+	packetLast = current;
+	
+	parseResults results = parseFreshCheck(recChar, valid, packet_fresh, current);
+	if (!results.success)
+		return results.bytesRead;
+
+	if (debug == 3) 
+	{
+		debugPort->printf("parse.state/recChar: %d %d\n", state, recChar);
+	}
+	switch (state)
+	{
+		case find_start_byte: /////////////////////////////////////////
+		{
+			parseFindStartByte(recChar);
+			break;
+		}
+
+		case find_id_byte: ////////////////////////////////////////////
+		{
+			parseFindIdByte(recChar);
+			break;
+		}
+
+		case find_command: ////////////////////////////////////////
+		{
+			parseResults results = parseFindCommand(recChar);
+			if (!results.success)
+				return results.bytesRead;
+
+			break;
+		}
+
+		case find_command2: ////////////////////////////////////////
+		{
+			parseResults results = parseFindCommand2(recChar);
+			if (!results.success)
+				return results.bytesRead;
+
+			break;
+		}
+
+		case find_overhead_byte: //////////////////////////////////////
+		{
+			parseResults results = parseFindOverheadByte(recChar);
+			if (!results.success)
+				return results.bytesRead;
+
+			break;
+		}
+
+		case find_payload_len: ////////////////////////////////////////
+		{
+			parseResults results = parseFindPayloadLength(recChar);
+			if (!results.success)
+				return results.bytesRead;
+
+			break;
+		}
+
+		case find_payload_len2: ////////////////////////////////////////
+		{
+			parseResults results = parseFindPayloadLength2(recChar);
+			if (!results.success)
+				return results.bytesRead;
+
+			break;
+		}
+
+		case find_payload: ////////////////////////////////////////////
+		{
+			parseFindPayload(recChar);
+			break;
+		}
+
+		case find_crc: ///////////////////////////////////////////
+		{
+			parseFindCrc(recChar);
+			break;
+		}
+
+		case find_crc2: ////////////////////////////////////////
+		{
+			parseResults results = parseFindCrc2(recChar);
+			if (!results.success)
+				return results.bytesRead;
+
+			break;
+		}
+
+		case find_end_byte: ///////////////////////////////////////////
+		{
+			parseResults results = parseFindEndByte(recChar);
+			return results.bytesRead;
+			break;
+		}
+
+		default:
+		{
+			parseUndefinedState(recChar);
+			break;
+		}
+	}
+
+	if (debug == 3)
+	{
+		debugPort->printf("parse.state2/status: %d %d\n", state, status);
 		debugPort->println();
 	}
 
@@ -732,4 +1331,5 @@ void Packet::reset()
 	bytesRead   = 0;
 	recvCrc   	= 0;
 	packetStart = 0;
+	packetLast  = 0;
 }

@@ -49,6 +49,12 @@ struct configST
 	uint32_t           timeout      = __UINT32_MAX__;
 };
 
+struct parseResults
+{
+	uint16_t bytesRead = 0;
+	bool success;
+};
+
 
 class Packet
 {
@@ -60,7 +66,7 @@ class Packet
 	uint8_t preamble[PREAMBLE_SIZE];
 	uint8_t postamble[POSTAMBLE_SIZE];
 
-	uint8_t bytesRead = 0;
+	uint16_t bytesRead = 0;
 	int8_t  status    = 0;
 
 
@@ -194,12 +200,34 @@ class Packet
 	uint8_t recOverheadByte  = 0;
 	uint8_t recCharPrevious  = 0;
 
+	uint32_t packetLast      = 0;
 	uint32_t packetStart     = 0;
+	// The type of packet checking for a fresh packet.
+	// 0 = max. time allowed per message (original)
+	// 1 = min. delta between reads
+	uint32_t packetType      = 1;
 	uint32_t timeout;
 
 
 	void    calcOverhead(uint8_t arr[], const uint16_t& len);
 	int16_t findLast(uint8_t arr[], const uint16_t& len);
+	uint16_t parseTypeMaxMessage(const uint8_t& recChar, const bool& valid);
+	uint16_t parseTypeMinDelta(const uint8_t& recChar, const bool& valid);
+
+	parseResults parseFindCommand(const uint8_t& recChar);
+	parseResults parseFindCommand2(const uint8_t& recChar);
+	parseResults parseFreshCheck(const uint8_t& recChar, const bool& valid, bool packet_fresh, uint32_t current);
+	parseResults parseFindCrc(const uint8_t& recChar);
+	parseResults parseFindCrc2(const uint8_t& recChar);
+	parseResults parseFindEndByte(const uint8_t& recChar);
+	parseResults parseFindIdByte(const uint8_t& recChar);
+	parseResults parseFindOverheadByte(const uint8_t& recChar);
+	parseResults parseFindPayload(const uint8_t& recChar);
+	parseResults parseFindPayloadLength(const uint8_t& recChar);
+	parseResults parseFindPayloadLength2(const uint8_t& recChar);
+	parseResults parseFindStartByte(const uint8_t& recChar);
+	parseResults parseUndefinedState(const uint8_t& recChar);
+
 	void    stuffPacket(uint8_t arr[], const uint16_t& len);
 	void    unpackPacket(uint8_t arr[]);
 };
